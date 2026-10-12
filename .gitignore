@@ -1,0 +1,19 @@
+# 工作区元数据（非交付物）
+.workbuddy/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 插画候选暂存区（只有定稿的 9 张进仓库）
+upgrade/illustrations/_staging/
+
+# 本地测试产物：只保留手动挑选的那张示例卡，其余一律不进仓库
+output/*
+!output/ritual_card_20261013_021254.png
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
