@@ -33,6 +33,10 @@
   （金色首行 + 饭搭子署名，防功能静默失败）；无 sage 时与原来逐行一致；
 - 若本机没装 Pillow → 自动降级为同目录下 .md 文本卡片，不报错。
 
+先贤文案硬校验（00 纪要 §10，渲染入口，不通过则拒绝出卡并告警、严禁截断）：
+  1. 贴心话 quote ≤20 字；
+  2. quote / classic / intro 不得含 forbidden_copy 禁忌词（尤其"求签/解签"）。
+
 插画文件约定（依据 00_团长拍板对齐纪要 §3，约定优于配置，无需改代码）：
   upgrade/illustrations/sage_<id>.png   一位先贤一张，跨场景复用
   交付规格 1260×600（2×），运行时居中裁 cover 后缩放到 630×300。
@@ -183,6 +187,42 @@ def load_illustration(path, size=SAGE_BAND_WH):
         return img
     except Exception:
         return None
+
+
+def load_forbidden_words(base_dir=None):
+    """从 references/sage_match.json 读 forbidden_copy 禁忌词表；读不到用内置兜底。"""
+    fallback = ["治愈", "疗效", "保佑", "开运", "显灵", "天意", "命里",
+                "注定", "转运", "消灾", "渡劫", "求签", "解签"]
+    try:
+        path = os.path.join(base_dir or project_root(), "references", "sage_match.json")
+        with open(path, "r", encoding="utf-8") as f:
+            words = json.load(f).get("forbidden_copy") or []
+        return words or fallback
+    except Exception:
+        return fallback
+
+
+def validate_sage_copy(data, base_dir=None):
+    """先贤文案硬校验（00 纪要 §10）。返回告警列表，空列表 = 通过。
+
+    规则：
+    1. 贴心话 quote ≤20 字，超长 → 告警（渲染入口拒绝出卡，严禁截断——
+       截断会改变文案语义，宁可报错也不截）；
+    2. quote / classic / intro 不得含 forbidden_copy 禁忌词
+       （尤其"求签/解签"——先贤不是算命，须与麦当劳官方抽奖隔离）。
+    """
+    warnings = []
+    sage = data.get("sage") or {}
+    quote = str(sage.get("quote", ""))
+    if quote and len(quote) > 20:
+        warnings.append("贴心话超长：%d 字 > 20 字上限（%s）" % (len(quote), quote))
+    forbidden = load_forbidden_words(base_dir)
+    for field in ("quote", "classic", "intro"):
+        v = str(sage.get(field, ""))
+        hit = [w for w in forbidden if w in v]
+        if hit:
+            warnings.append("%s 含禁忌词 %s（%s）" % (field, "、".join(hit), v))
+    return warnings
 
 
 def render_png(data, out_path, font_path, illustration_path=None):
@@ -494,6 +534,15 @@ def main():
     outdir = os.path.join(base, "output")
     os.makedirs(outdir, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # 先贤文案硬校验（00 纪要 §10）：不通过则拒绝渲染该卡，输出告警，不出文件
+    warnings = validate_sage_copy(data, base)
+    if warnings:
+        print(json.dumps({"ok": False, "path": None, "format": None,
+                          "illustration": False,
+                          "error": "先贤文案校验未通过，已拒绝渲染（严禁截断，请修文案）",
+                          "warnings": warnings}, ensure_ascii=False))
+        sys.exit(2)
 
     font_path = find_font()
     used_illustration = False
